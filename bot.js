@@ -3,9 +3,10 @@ const fs = require('fs');
 const { Client, Collection, Intents } = require('discord.js');
 const { token } = require('./config.json');
 
-const { query_dota } = require('./queries.js');
+const { GetLastMatchId, GetMatchDetails, UpdateDamageFromOpenDota, LookupHeroName } = require('./queries.js');
 
 let TEXT_CHANNEL_ID = "940008295022874679";
+let DOTDOTDOTLOADING = `...loading...`;
 
 // Create a new client instance
 const client = new Client({ intents: [Intents.FLAGS.GUILDS] });
@@ -20,81 +21,106 @@ for (const file of commandFiles) {
 	client.commands.set(command.data.name, command);
 }
 
+const prepare_broadcast = async (match_details) => {
+  let didWin = (match_details.win ? 'won' : 'lost');
+  // let broadcast_message = `Stanley ` + didWin + ` a match as ` +
+  // LookupHeroName(match_details.hero_id) + ' in ' + Math.floor(match_details.duration).toString() + ' minutes. He took '
+  //   + (match_details.damage_taken == 0 ? DOTDOTDOTLOADING : match_details.damage_taken) + ' damage and died ' + match_details.deaths + ' times.';
+
+  let broadcast_message = `Stanley ` + didWin + ` a match as ` +
+  LookupHeroName(match_details.hero_id) + ' in ' + Math.floor(match_details.duration).toString() + ' minutes. He took '
+    + DOTDOTDOTLOADING + ' damage and died ' + match_details.deaths + ' times.';
+
+  
+  return broadcast_message;
+}
+
 // When the client is ready, run this code (only once)
 client.once('ready', () => {
 	console.log('Ready!');
-    client.user.setActivity('Dota 2', { type: 'PLAYING' });
+  client.user.setActivity('Dota 2', { type: 'PLAYING' });
     
-    query_dota();
-    update_message_if_necessary();
-    setTimeout(() => {  run_loop();  }, 60000);
+  main();
 });
 
-const update_message_if_necessary = async () => {
-  let last_message = fs.readFileSync('./last_message.data', 'utf-8');
-  let text_channel = client.channels.cache.get(TEXT_CHANNEL_ID);
-  message = await text_channel.messages.fetch(last_message);
-
-  console.log(message);
-  if (message && message.content && message.content.search("...loading...") != -1) {
-    console.log("found a placeholder");
-    new_damage = await update_damage_from_opendota();
-    if (new_damage != 0) {
-      new_message = message.content.replace("...loading...", new_damage);
-    }
-    message.edit(new_message);
+const main = async () => {
+  let last_match = fs.readFileSync('./last_match.data', 'utf-8');
+  let new_last_match = await GetLastMatchId();
+  if (last_match != new_last_match) {
+    let match_details = await GetMatchDetails(new_last_match);
+    let broadcast_message = await prepare_broadcast(match_details);
+    await Broadcast(broadcast_message);
+    await RecordNewLastMatch(new_last_match);
+  } else {
+    console.log("no new match found.");
   }
+
+  await UpdateDamageValues();
+
+  await setTimeout(() => {   main();  }, 10000);
 }
 
-// // wait for delayMs milliseconds
-// const sleep = (delayMs) => { 
-//   return new Promise((resolve, reject) => {
-//     setTimeout(() => { resolve() }, delayMs)
-//   })
-// }
+const RecordNewLastMatch = async (new_last_match) => {
+  fs.writeFileSync('./last_match.data', new_last_match.toString());
+}
 
-// // poll every intervalMs up to maxRetries
-// // times for the async fn to not throw
-// const poll = async (maxRetries, intervalMs, fn) => {
-//   let retries = 0, data = null
-//   while (retries < maxRetries && !data) {
-//     try { 
-//       data = await fn()
-//       return data
-//     } catch (e) {
-//       retries++
-//       await sleep(intervalMs)
-//     }
-//   }
-//   return null
-// }
+const UpdateDamageValues = async () => {
+  let notify_channels_raw = fs.readFileSync('./notify_channels.data', 'utf-8');
+  let notify_channels = notify_channels_raw.split('\n');
 
-// const getMatchDetails = async () => {
-//   const url = `TODO/${matchId}`
-//   const res = await axios.get(url)
-//   // todo: format result 
-//   return {}
-// }
+  let notify_messages_raw = fs.readFileSync('./last_message.data', 'utf-8');
+  let notify_messages = notify_messages_raw.split('\n');
 
-// const getLastMatch = async () => {
-//   const url = `TODO`
-//   const res = await axios.get(url)
-//   // todo: format result
-//   return {}
-// }
+  notify_channels = notify_channels.map(str => str.trim());
+  notify_messages = notify_messages.map(str => str.trim());
 
-// const main = async () => {
-//   const match = await getLastMatch()
-//   if (match.id != savedMatch.id) {
-//     const matchDetails = await poll(
-//       10, // retry 10 times
-//       10000, // wait 10s between poll
-//       () => getMatchDetails(match.id))
-//     if (matchDetails) {
-//       // do stuff
-//     }
-//   }
-// }
+  // console.log(notify_channels);
+  // console.log(notify_messages);
+
+  let message_index = 0;
+  let new_damage = 0;
+  for (channel of notify_channels) {
+    let text_channel = client.channels.cache.get(channel);
+    if (!text_channel) {
+    message_index++;
+      continue;
+    }
+
+    //console.log(notify_messages[message_index]);
+    let message = await text_channel.messages.fetch(notify_messages[message_index]);
+    message_index++;
+  
+    if (message && message.content && message.content.search(DOTDOTDOTLOADING) != -1) {
+      // only fetch damage once.
+      if (new_damage == 0) {
+        new_damage = await UpdateDamageFromOpenDota();
+      }
+
+      if (new_damage != 0) {
+        new_message = message.content.replace(DOTDOTDOTLOADING, new_damage);
+      }
+      message.edit(new_message);
+    }
+  }
+
+}
+
+const Broadcast = async (broadcast_message) => {
+  let notify_channels_raw = fs.readFileSync('./notify_channels.data', 'utf-8');
+  let notify_channels = notify_channels_raw.split('\n');
+
+  let persistance_data = "";
+
+  for (let channel of notify_channels) {
+
+    let text_channel = client.channels.cache.get(channel);
+    let message = await text_channel.send(broadcast_message);
+    persistance_data += (`${message.id}\n`);
+  }
+
+  // record the message IDs in the order of notify_channel
+  fs.writeFileSync('./last_message.data', persistance_data);
+}
 
 client.on('interactionCreate', async interaction => {
 	if (!interaction.isCommand()) return;
