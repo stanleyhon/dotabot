@@ -23,15 +23,10 @@ for (const file of commandFiles) {
 
 const prepare_broadcast = async (match_details) => {
   let didWin = (match_details.win ? 'won' : 'lost');
-  // let broadcast_message = `Stanley ` + didWin + ` a match as ` +
-  // LookupHeroName(match_details.hero_id) + ' in ' + Math.floor(match_details.duration).toString() + ' minutes. He took '
-  //   + (match_details.damage_taken == 0 ? DOTDOTDOTLOADING : match_details.damage_taken) + ' damage and died ' + match_details.deaths + ' times.';
-
   let broadcast_message = `Stanley ` + didWin + ` a match as ` +
   LookupHeroName(match_details.hero_id) + ' in ' + Math.floor(match_details.duration).toString() + ' minutes. He took '
-    + DOTDOTDOTLOADING + ' damage and died ' + match_details.deaths + ' times.';
+    + (match_details.damage_taken == 0 ? DOTDOTDOTLOADING : match_details.damage_taken) + ' damage and died ' + match_details.deaths + ' times.';
 
-  
   return broadcast_message;
 }
 
@@ -45,14 +40,19 @@ client.once('ready', () => {
 
 const main = async () => {
   let last_match = fs.readFileSync('./last_match.data', 'utf-8');
-  let new_last_match = await GetLastMatchId();
-  if (last_match != new_last_match) {
-    let match_details = await GetMatchDetails(new_last_match);
-    let broadcast_message = await prepare_broadcast(match_details);
-    await Broadcast(broadcast_message);
-    await RecordNewLastMatch(new_last_match);
-  } else {
-    console.log("no new match found.");
+  try {
+    let new_last_match = await GetLastMatchId().catch(e => { console.log(e) });
+    if (last_match != new_last_match) {
+      let match_details = await GetMatchDetails(new_last_match).catch(e => { throw e; });
+      let broadcast_message = await prepare_broadcast(match_details).catch(e => { console.log(e) });
+      await Broadcast(broadcast_message).catch(e => { console.log(e) });
+      await RecordNewLastMatch(new_last_match).catch(e => { console.log(e) });
+    } else {
+      console.log("no new match found.");
+    }
+  } catch (e) {
+    console.log("something went wrong.");
+    console.log(e);
   }
 
   await UpdateDamageValues();
@@ -94,6 +94,9 @@ const UpdateDamageValues = async () => {
       // only fetch damage once.
       if (new_damage == 0) {
         new_damage = await UpdateDamageFromOpenDota();
+        if (!new_damage || new_damage == 0) {
+          return;
+        }
       }
 
       if (new_damage != 0) {

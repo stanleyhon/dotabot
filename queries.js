@@ -49,12 +49,12 @@ const GetMatchDetails = async (match_id) => {
       win = player.win;
       hero_id = player.hero_id;
       for (source in player.damage_taken) {
+        console.log (source);
+        console.log(player.damage_taken[source]);
         damage_taken += player.damage_taken[source];
       }
 
       if (damage_taken == 0) {
-        // opendota doesn't have the damage yet, delay by throwing.
-        throw "no damage data yet, try again...."
       }
 
       deaths = player.deaths;
