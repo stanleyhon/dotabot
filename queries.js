@@ -49,7 +49,7 @@ const GetMatchDetails = async (match_id) => {
       win = player.win;
       hero_id = player.hero_id;
       for (source in player.damage_taken) {
-        console.log (source);
+        console.log(source);
         console.log(player.damage_taken[source]);
         damage_taken += player.damage_taken[source];
       }
@@ -62,7 +62,7 @@ const GetMatchDetails = async (match_id) => {
     }
   }
 
-  return { win, duration, hero_id, damage_taken, deaths};
+  return { win, duration, hero_id, damage_taken, deaths };
 }
 
 const GetLastMatchId = async () => {

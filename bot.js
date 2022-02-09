@@ -5,7 +5,6 @@ const { token } = require('./config.json');
 
 const { GetLastMatchId, GetMatchDetails, UpdateDamageFromOpenDota, LookupHeroName } = require('./queries.js');
 
-let TEXT_CHANNEL_ID = "940008295022874679";
 let DOTDOTDOTLOADING = `...loading...`;
 
 // Create a new client instance
@@ -15,16 +14,16 @@ client.commands = new Collection();
 const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
 
 for (const file of commandFiles) {
-	const command = require(`./commands/${file}`);
-	// Set a new item in the Collection
-	// With the key as the command name and the value as the exported module
-	client.commands.set(command.data.name, command);
+  const command = require(`./commands/${file}`);
+  // Set a new item in the Collection
+  // With the key as the command name and the value as the exported module
+  client.commands.set(command.data.name, command);
 }
 
 const prepare_broadcast = async (match_details) => {
   let didWin = (match_details.win ? 'won' : 'lost');
   let broadcast_message = `Stanley ` + didWin + ` a match as ` +
-  LookupHeroName(match_details.hero_id) + ' in ' + Math.floor(match_details.duration).toString() + ' minutes. He took '
+    LookupHeroName(match_details.hero_id) + ' in ' + Math.floor(match_details.duration).toString() + ' minutes. He took '
     + (match_details.damage_taken == 0 ? DOTDOTDOTLOADING : match_details.damage_taken) + ' damage and died ' + match_details.deaths + ' times.';
 
   return broadcast_message;
@@ -32,9 +31,9 @@ const prepare_broadcast = async (match_details) => {
 
 // When the client is ready, run this code (only once)
 client.once('ready', () => {
-	console.log('Ready!');
+  console.log('Ready!');
   client.user.setActivity('Dota 2', { type: 'PLAYING' });
-    
+
   main();
 });
 
@@ -57,7 +56,7 @@ const main = async () => {
 
   await UpdateDamageValues();
 
-  await setTimeout(() => {   main();  }, 10000);
+  await setTimeout(() => { main(); }, 10000);
 }
 
 const RecordNewLastMatch = async (new_last_match) => {
@@ -82,14 +81,14 @@ const UpdateDamageValues = async () => {
   for (channel of notify_channels) {
     let text_channel = client.channels.cache.get(channel);
     if (!text_channel) {
-    message_index++;
+      message_index++;
       continue;
     }
 
     //console.log(notify_messages[message_index]);
     let message = await text_channel.messages.fetch(notify_messages[message_index]);
     message_index++;
-  
+
     if (message && message.content && message.content.search(DOTDOTDOTLOADING) != -1) {
       // only fetch damage once.
       if (new_damage == 0) {
@@ -126,18 +125,18 @@ const Broadcast = async (broadcast_message) => {
 }
 
 client.on('interactionCreate', async interaction => {
-	if (!interaction.isCommand()) return;
+  if (!interaction.isCommand()) return;
 
-	const command = client.commands.get(interaction.commandName);
+  const command = client.commands.get(interaction.commandName);
 
-	if (!command) return;
+  if (!command) return;
 
-	try {
-		await command.execute(interaction);
-	} catch (error) {
-		console.error(error);
-		await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
-	}
+  try {
+    await command.execute(interaction);
+  } catch (error) {
+    console.error(error);
+    await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+  }
 });
 
 // Login to Discord with your client's token
