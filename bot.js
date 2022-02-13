@@ -3,9 +3,11 @@ const fs = require('fs');
 const { Client, Collection, Intents } = require('discord.js');
 const { token } = require('./config.json');
 
-const { GetLastMatchId, GetMatchDetails, UpdateDamageFromOpenDota, LookupHeroName } = require('./queries.js');
+const { GetLastMatchId, GetMatchDetails, GetFunFact, LookupHeroName } = require('./queries.js');
 
-let DOTDOTDOTLOADING = `...loading...`;
+let DOTDOTDOTLOADING = `<loading more info>`;
+
+let DEBUG_MODE = false;
 
 // Create a new client instance
 const client = new Client({ intents: [Intents.FLAGS.GUILDS] });
@@ -23,8 +25,8 @@ for (const file of commandFiles) {
 const prepare_broadcast = async (match_details) => {
   let didWin = (match_details.win ? 'won' : 'lost');
   let broadcast_message = `Stanley ` + didWin + ` a match as ` +
-    LookupHeroName(match_details.hero_id) + ' in ' + Math.floor(match_details.duration).toString() + ' minutes. He took '
-    + (match_details.damage_taken == 0 ? DOTDOTDOTLOADING : match_details.damage_taken) + ' damage and died ' + match_details.deaths + ' times.';
+    LookupHeroName(match_details.hero_id) + ' in ' + Math.floor(match_details.duration).toString() +
+    ` minutes and went ${match_details.kills}/${match_details.deaths}/${match_details.assists}. ` + DOTDOTDOTLOADING;
 
   return broadcast_message;
 }
@@ -47,14 +49,14 @@ const main = async () => {
       await Broadcast(broadcast_message).catch(e => { console.log(e) });
       await RecordNewLastMatch(new_last_match).catch(e => { console.log(e) });
     } else {
-      console.log("no new match found.");
+      console.log(new Date() + " no new match found.");
     }
   } catch (e) {
     console.log("something went wrong.");
     console.log(e);
   }
 
-  await UpdateDamageValues();
+  await UpdateFunFactMessages();
 
   await setTimeout(() => { main(); }, 10000);
 }
@@ -63,7 +65,7 @@ const RecordNewLastMatch = async (new_last_match) => {
   fs.writeFileSync('./last_match.data', new_last_match.toString());
 }
 
-const UpdateDamageValues = async () => {
+const UpdateFunFactMessages = async () => {
   let notify_channels_raw = fs.readFileSync('./notify_channels.data', 'utf-8');
   let notify_channels = notify_channels_raw.split('\n');
 
@@ -77,7 +79,7 @@ const UpdateDamageValues = async () => {
   // console.log(notify_messages);
 
   let message_index = 0;
-  let new_damage = 0;
+
   for (channel of notify_channels) {
     let text_channel = client.channels.cache.get(channel);
     if (!text_channel) {
@@ -86,21 +88,21 @@ const UpdateDamageValues = async () => {
     }
 
     //console.log(notify_messages[message_index]);
-    let message = await text_channel.messages.fetch(notify_messages[message_index]);
+    let message = await text_channel.messages.fetch(notify_messages[message_index], { force: true });
     message_index++;
 
     if (message && message.content && message.content.search(DOTDOTDOTLOADING) != -1) {
-      // only fetch damage once.
-      if (new_damage == 0) {
-        new_damage = await UpdateDamageFromOpenDota();
-        if (!new_damage || new_damage == 0) {
-          return;
-        }
+      console.log ('found ...loading to replace');
+      let newFunFact = "";
+      try {
+        newFunFact = await GetFunFact();
+      } catch (e) {
+        console.log(e);
+        return;
       }
 
-      if (new_damage != 0) {
-        new_message = message.content.replace(DOTDOTDOTLOADING, new_damage);
-      }
+      // console.log("about to replace with " + newFunFact);
+      new_message = message.content.replace(DOTDOTDOTLOADING, newFunFact);
       message.edit(new_message);
     }
   }
@@ -114,10 +116,18 @@ const Broadcast = async (broadcast_message) => {
   let persistance_data = "";
 
   for (let channel of notify_channels) {
-
     let text_channel = client.channels.cache.get(channel);
+
+    if (DEBUG_MODE) {
+      console.log("DEBUGMODE: Send [" + broadcast_message + "] to channelID:" + text_channel);
+      continue;
+    }
     let message = await text_channel.send(broadcast_message);
     persistance_data += (`${message.id}\n`);
+  }
+
+  if (DEBUG_MODE) {
+    return;
   }
 
   // record the message IDs in the order of notify_channel
