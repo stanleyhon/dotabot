@@ -1,5 +1,11 @@
 const axios = require('axios');
+const known_players = require('./known_players.json');
 const { steamid, dota2key, opendotakey, opendotaId } = require('./config.json');
+
+const PickAnIndex = async (max_index) => {
+  let seed = Math.floor(Math.random() * max_index)
+  return seed;
+}
 
 const FunFact = async (opendota_data) => {
   let factFunctions = [
@@ -8,21 +14,33 @@ const FunFact = async (opendota_data) => {
     TPScrollPurchasedFF
   ];
 
-  let seed = Math.random(); // random between 0-1
-  seed = seed * factFunctions.length; // if length is 4, we'll get bween 0 and 4.
-  seed -= 1;
-  seed = Math.round(seed);
-  if (seed < 0) { seed = 0; }
 
-  seed = Math.abs(seed);
+  let random_index = await PickAnIndex(known_players.players.length - 1);
+
+  // Pick a known player to find stats for.
+  let luckyPlayer = known_players.players[random_index];
+
+  let found = false;
+  for (let player of opendota_data.data.players) {
+    if (luckyPlayer.opendota_id == player.account_id) {
+      found = true;
+      break;
+    }
+  }
+
+  if (!found) {
+    throw "player not in this game, trying again later.";
+  }
 
   // console.log(seed);
-  let funFactMessage = await factFunctions[seed](opendota_data);
+  random_index = await PickAnIndex(factFunctions.length - 1);
+  console.log(random_index);
+  let funFactMessage = await factFunctions[random_index](opendota_data, luckyPlayer.opendota_id, luckyPlayer.name);
   console.log("returning fun message: " + funFactMessage);
   return funFactMessage;
 }
 
-const DamageTakenFF = async (opendota_data) => {
+const DamageTakenFF = async (opendota_data, opendotaId, shortName) => {
   let damage_taken = 0;
   let deaths = 0;
   for (let player of opendota_data.data.players) {
@@ -44,11 +62,11 @@ const DamageTakenFF = async (opendota_data) => {
     // OD isn't ready, just throw.
   }
 
-  let fun_fact = `He took ${damage_taken} total damage and died ${deaths} times.`;
+  let fun_fact = `${shortName} took ${damage_taken} total damage and died ${deaths} times.`;
   return fun_fact;
 }
 
-const DamageDealtFF = async (opendota_data) => {
+const DamageDealtFF = async (opendota_data, opendotaId, shortName) => {
   let damage_dealt = 0;
   let kills = 0;
 
@@ -72,11 +90,11 @@ const DamageDealtFF = async (opendota_data) => {
     // OD isn't ready, just throw.
   }
 
-  let fun_fact = `He dealt ${damage_dealt} total damage and got ${kills} kills.`;
+  let fun_fact = `${shortName} dealt ${damage_dealt} total damage and got ${kills} kills.`;
   return fun_fact;
 }
 
-const TPScrollPurchasedFF = async (opendota_data) =>  {
+const TPScrollPurchasedFF = async (opendota_data, opendotaId, shortName) =>  {
   let purchases = 0;
 
   for (let player of opendota_data.data.players) {
@@ -92,7 +110,7 @@ const TPScrollPurchasedFF = async (opendota_data) =>  {
 
   let cost = purchases * 100;
 
-  let fun_fact = `He purchased ${purchases} TP scrolls costing a total of ${cost} gold.`;
+  let fun_fact = `${shortName} purchased ${purchases} TP scrolls costing a total of ${cost} gold.`;
   return fun_fact;
 }
 

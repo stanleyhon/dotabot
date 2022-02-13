@@ -3,6 +3,7 @@ const { steamid, dota2key, opendotakey, opendotaId } = require('./config.json');
 const heroes = require('./heroes.js');
 const axios = require('axios');
 const fs = require('fs');
+const known_players = require('./known_players.json');
 const { FunFact } = require('./stat_processing');
 
 function LookupHeroName(hero_id) {
@@ -17,38 +18,46 @@ const GetFunFact = async () => {
   match_id = fs.readFileSync('./last_match.data', 'utf-8');
   const res = await axios.get(`https://api.opendota.com/api/matches/${match_id}?api_key=${opendotakey}`);
 
-  let message = await FunFact(res);
+  let message;
+  try {
+    message = await FunFact(res);
+  } catch (e) {
+    throw e;
+  }
 
   return message;
 }
 
+// returns { result_array, duration }
+// results array = [ { win, hero_id, kills, deaths, assists, discord_id } ]
 const GetMatchDetails = async (match_id) => {
-  let win = false;
-  let duration = 0;
-  let damage_taken = 0;
-  let kills = 0;
-  let deaths = 0;
-  let assists = 0;
-
   let res = await axios.get(
     `https://api.opendota.com/api/matches/${match_id}?api_key=${opendotakey}`);
 
-  duration = res.data.duration / 60;
+  let opendota_id_map = new Map();
+  for (player of known_players.players) {
+    console.log("adding " + player.opendota_id + "|" + player.discord_id)
+    opendota_id_map.set(player.opendota_id, player.discord_id);
+  }
+
+  let duration = res.data.duration / 60;
+  let results_array = [];
 
   // find me and return basic info.
   for (let player of res.data.players) {
-    if (player.account_id == opendotaId) {
-      win = player.win;
-      hero_id = player.hero_id;
-  
-      kills = player.kills;
-      deaths = player.deaths;
-      assists = player.assists;
-      break;
+    if (opendota_id_map.has(player.account_id)) {
+      let win = player.win;
+      let hero_id = player.hero_id;
+      let kills = player.kills;
+      let deaths = player.deaths;
+      let assists = player.assists;
+      let discord_id = opendota_id_map.get(player.account_id);
+      results_array.push(
+        { win, hero_id, kills, deaths, assists, discord_id });
     }
   }
 
-  return { win, duration, hero_id, kills, deaths, assists };
+  return { results_array, duration };
 }
 
 const GetLastMatchId = async () => {

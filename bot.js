@@ -23,12 +23,38 @@ for (const file of commandFiles) {
 }
 
 const prepare_broadcast = async (match_details) => {
-  let didWin = (match_details.win ? 'won' : 'lost');
-  let broadcast_message = `Stanley ` + didWin + ` a match as ` +
-    LookupHeroName(match_details.hero_id) + ' in ' + Math.floor(match_details.duration).toString() +
-    ` minutes and went ${match_details.kills}/${match_details.deaths}/${match_details.assists}. ` + DOTDOTDOTLOADING;
+  let didWin = false; // for now just assume everyone played on the same team.
+  let duration = Math.round(match_details.duration);
+  // template:
 
-  return broadcast_message;
+  /*
+  Stanley (Luna) [1/5/12]
+  Luccas (Rubick) [1/2/12]
+  Rawm (Meepo) [2/2/12]
+
+  Won in 32 min.
+
+  ...loading more info...
+  */
+
+  let prepared_message  = "\n";
+  for (result of match_details.results_array) {
+    let heroName = LookupHeroName(result.hero_id)
+    prepared_message += `<@!${result.discord_id}> (${heroName}) `;
+    prepared_message += `[${result.kills}/${result.deaths}/${result.assists}]`;
+    prepared_message += `\n`;
+    didWin = result.win;
+  }
+  prepared_message += `\n`;
+
+  if (didWin) {
+    prepared_message += `Won`;
+  } else {
+    prepared_message += `Lost`;
+  }
+
+  prepared_message += ` in ${duration} mins.\n\n${DOTDOTDOTLOADING}`;
+  return prepared_message;
 }
 
 // When the client is ready, run this code (only once)
@@ -38,6 +64,12 @@ client.once('ready', () => {
 
   main();
 });
+
+const debugFunction = async () => {
+  let text_channel = await client.channels.fetch('940008295022874679');
+
+  let message = await text_channel.send("test 123 <@!162053725915971585> 123");
+}
 
 const main = async () => {
   let last_match = fs.readFileSync('./last_match.data', 'utf-8');
@@ -57,6 +89,8 @@ const main = async () => {
   }
 
   await UpdateFunFactMessages();
+
+  // await debugFunction();
 
   await setTimeout(() => { main(); }, 10000);
 }
@@ -98,6 +132,11 @@ const UpdateFunFactMessages = async () => {
         newFunFact = await GetFunFact();
       } catch (e) {
         console.log(e);
+        return;
+      }
+
+      if (DEBUG_MODE) {
+        console.log ("Would edit message at this point to replace DOTDOT with " + newFunFact);
         return;
       }
 
