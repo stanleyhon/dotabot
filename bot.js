@@ -5,7 +5,8 @@ const { token } = require('./config.json');
 
 const { GetLastMatchId, GetMatchDetails, GetFunFact, LookupHeroName } = require('./queries.js');
 
-let DOTDOTDOTLOADING = `<loading more info>`;
+let FUNFACTFIELDNAME = `Fun Fact`;
+let DOTDOTDOTLOADING = `loading...`;
 
 let DEBUG_MODE = false;
 
@@ -23,43 +24,44 @@ for (const file of commandFiles) {
 }
 
 const prepare_broadcast = async (match_details) => {
+  // inside a command, event listener, etc.
   let didWin = false; // for now just assume everyone played on the same team.
   let duration = Math.round(match_details.duration);
-  // template:
 
-  /*
-  Stanley (Luna) [1/5/12]
-  Luccas (Rubick) [1/2/12]
-  Rawm (Meepo) [2/2/12]
-
-  Won in 32 min.
-
-  ...loading more info...
-  */
-
-  let prepared_message  = "\n";
+  let embedFields = [];
   for (result of match_details.results_array) {
     let heroName = LookupHeroName(result.hero_id)
-    prepared_message += `<@!${result.discord_id}> (${heroName}) `;
-    prepared_message += `[${result.kills}/${result.deaths}/${result.assists}]`;
-    prepared_message += `\n`;
+
+    let newField = {};
+    newField.name = `${heroName}`;
+    newField.value = `<@!${result.discord_id}> (${result.kills}/${result.deaths}/${result.assists})`;
+
+    embedFields.push(newField);
+
     didWin = result.win;
   }
-  prepared_message += `\n`;
 
-  if (didWin) {
-    prepared_message += `Won`;
-  } else {
-    prepared_message += `Lost`;
-  }
+  // Now add one more field for the fun fact.
+  let funField = {
+    name: 'Fun Fact',
+    value: `${DOTDOTDOTLOADING}`
+  };
 
-  prepared_message += ` in ${duration} mins.\n\n${DOTDOTDOTLOADING}`;
-  return prepared_message;
+  embedFields.push(funField);
+
+  let winOrLoseText = (didWin ? `Win` : `Loss`);
+  const embed_message = {
+    color: 0x0099ff,
+    title: `${winOrLoseText} - ${duration} mins`,
+    fields: embedFields,
+  };
+
+  return embed_message;
 }
 
 // When the client is ready, run this code (only once)
 client.once('ready', () => {
-  console.log('Ready!');
+  console.log('Logged into Discord.');
   client.user.setActivity('Dota 2', { type: 'PLAYING' });
 
   main();
@@ -74,14 +76,28 @@ const debugFunction = async () => {
 const main = async () => {
   let last_match = fs.readFileSync('./last_match.data', 'utf-8');
   try {
-    let new_last_match = await GetLastMatchId().catch(e => { console.log(e) });
-    if (last_match != new_last_match) {
-      let match_details = await GetMatchDetails(new_last_match).catch(e => { throw e; });
-      let broadcast_message = await prepare_broadcast(match_details).catch(e => { console.log(e) });
-      await Broadcast(broadcast_message).catch(e => { console.log(e) });
-      await RecordNewLastMatch(new_last_match).catch(e => { console.log(e) });
-    } else {
+    let lastMatchData = await GetLastMatchId();
+    let new_last_match_id = lastMatchData.match_id;
+    let new_last_match_timestamp = lastMatchData.timestamp;
+    // last_match_timestamp must be newer than the timestamp on disk
+    // if it isn't, discard.
+    let last_match_timestamp = fs.readFileSync('./last_match_timestamp.data',  'utf-8');
+
+    // DEBUG ONLY
+    // last_match_timestamp = new_last_match_timestamp - 1;
+    // new_last_match_id = 6430768258;
+
+    if (last_match_timestamp > new_last_match_timestamp) {
       console.log(new Date() + " no new match found.");
+    } else {
+      console.log(new Date() + " new match found.")
+      if (last_match != new_last_match_id) {
+        let match_details = await GetMatchDetails(new_last_match_id);
+        let broadcast_message = await prepare_broadcast(match_details);
+        await Broadcast(broadcast_message);
+        await RecordNewLastMatch(new_last_match_id);
+        await RecordNewLastMatchTimestamp(new_last_match_timestamp);
+      }
     }
   } catch (e) {
     console.log("something went wrong.");
@@ -99,6 +115,10 @@ const RecordNewLastMatch = async (new_last_match) => {
   fs.writeFileSync('./last_match.data', new_last_match.toString());
 }
 
+const RecordNewLastMatchTimestamp= async (new_last_match_timestamp) => {
+  fs.writeFileSync('./last_match.data', new_last_match_timestamp.toString());
+}
+
 const UpdateFunFactMessages = async () => {
   let notify_channels_raw = fs.readFileSync('./notify_channels.data', 'utf-8');
   let notify_channels = notify_channels_raw.split('\n');
@@ -108,9 +128,6 @@ const UpdateFunFactMessages = async () => {
 
   notify_channels = notify_channels.map(str => str.trim());
   notify_messages = notify_messages.map(str => str.trim());
-
-  // console.log(notify_channels);
-  // console.log(notify_messages);
 
   let message_index = 0;
 
@@ -123,9 +140,21 @@ const UpdateFunFactMessages = async () => {
 
     //console.log(notify_messages[message_index]);
     let message = await text_channel.messages.fetch(notify_messages[message_index], { force: true });
+    //console.log(message);
     message_index++;
 
-    if (message && message.content && message.content.search(DOTDOTDOTLOADING) != -1) {
+    let needsUpdate = false;
+    for (let field of message.embeds[0].fields) {
+      console.log(field);
+      if (field.name == FUNFACTFIELDNAME && field.value == DOTDOTDOTLOADING) {
+        needsUpdate = true;
+        break;
+      }
+    }
+
+    console.log(needsUpdate);
+
+    if (message && needsUpdate) {
       console.log ('found ...loading to replace');
       let newFunFact = "";
       try {
@@ -140,15 +169,19 @@ const UpdateFunFactMessages = async () => {
         return;
       }
 
-      // console.log("about to replace with " + newFunFact);
-      new_message = message.content.replace(DOTDOTDOTLOADING, newFunFact);
-      message.edit(new_message);
+      // find the right field to edit:
+      for (let field of message.embeds[0].fields) {
+        if (field.name == FUNFACTFIELDNAME) {
+          field.value = newFunFact;
+        }
+      }
+      await message.edit({embeds: message.embeds});
     }
   }
 
 }
 
-const Broadcast = async (broadcast_message) => {
+const Broadcast = async (broadcast_embed) => {
   let notify_channels_raw = fs.readFileSync('./notify_channels.data', 'utf-8');
   let notify_channels = notify_channels_raw.split('\n');
 
@@ -158,10 +191,13 @@ const Broadcast = async (broadcast_message) => {
     let text_channel = client.channels.cache.get(channel);
 
     if (DEBUG_MODE) {
-      console.log("DEBUGMODE: Send [" + broadcast_message + "] to channelID:" + text_channel);
+      console.log("DEBUGMODE: Send [");
+      console.log(broadcast_embed);
+      console.log("] to channelID:" + text_channel);
       continue;
     }
-    let message = await text_channel.send(broadcast_message);
+
+    let message = await text_channel.send({ embeds: [broadcast_embed] });
     persistance_data += (`${message.id}\n`);
   }
 

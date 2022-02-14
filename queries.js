@@ -36,7 +36,7 @@ const GetMatchDetails = async (match_id) => {
 
   let opendota_id_map = new Map();
   for (player of known_players.players) {
-    console.log("adding " + player.opendota_id + "|" + player.discord_id)
+    // console.log("adding " + player.opendota_id + "|" + player.discord_id)
     opendota_id_map.set(player.opendota_id, player.discord_id);
   }
 
@@ -66,7 +66,9 @@ const GetLastMatchId = async () => {
 
   for (key in res.data.result.matches) {
     if (res.data.result.matches[key].lobby_type != 12) {
-      return res.data.result.matches[key].match_id;
+      let match_id = res.data.result.matches[key].match_id;
+      let timestamp = res.data.result.matches[key].start_time;
+      return {match_id, timestamp};
     }
   }
 

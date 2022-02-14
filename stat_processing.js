@@ -14,27 +14,24 @@ const FunFact = async (opendota_data) => {
     TPScrollPurchasedFF
   ];
 
-
-  let random_index = await PickAnIndex(known_players.players.length - 1);
-
-  // Pick a known player to find stats for.
-  let luckyPlayer = known_players.players[random_index];
-
-  let found = false;
+  let playersInMatch = new Map();
   for (let player of opendota_data.data.players) {
-    if (luckyPlayer.opendota_id == player.account_id) {
-      found = true;
-      break;
+    playersInMatch.set(player.account_id, player.account_id);
+  }
+
+  let viable_players = [];
+  for (player of known_players.players) {
+    if (playersInMatch.get(player.opendota_id)) {
+      viable_players.push(player);
     }
   }
 
-  if (!found) {
-    throw "player not in this game, trying again later.";
-  }
+  // Pick a known player to find stats for.
+  let random_index = await PickAnIndex(viable_players.length - 1);
+  let luckyPlayer = viable_players[random_index];
 
-  // console.log(seed);
+
   random_index = await PickAnIndex(factFunctions.length - 1);
-  console.log(random_index);
   let funFactMessage = await factFunctions[random_index](opendota_data, luckyPlayer.opendota_id, luckyPlayer.name);
   console.log("returning fun message: " + funFactMessage);
   return funFactMessage;
@@ -116,9 +113,13 @@ const TPScrollPurchasedFF = async (opendota_data, opendotaId, shortName) =>  {
 
 const TestFunFact_Main = async () => {
 
-  const res = await axios.get(`https://api.opendota.com/api/matches/6425749320?api_key=${opendotakey}`);
+  const res = await axios.get(`https://api.opendota.com/api/matches/6430823518?api_key=${opendotakey}`);
 
-  console.log(await FunFact(res));
+  try {
+    console.log(await FunFact(res));
+  } catch (e) {
+    console.log(e);
+  }
 }
 
 // TestFunFact_Main();
