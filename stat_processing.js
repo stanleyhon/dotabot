@@ -111,6 +111,22 @@ const TPScrollPurchasedFF = async (opendota_data, opendotaId, shortName) =>  {
   return fun_fact;
 }
 
+const TotalStunsFF = async (opendota_data, opendotaId, shortName) => {
+
+}
+
+const BuybacksFF = async (opendota_data, opendotaId, shortName) => {
+
+}
+
+const MaxHeroHitFF = async (opendota_data, opendotaId, shortName) => {
+
+}
+
+const TowerDamageFF = async (opendota_data, opendotaId, shortName) => {
+
+}
+
 const TestFunFact_Main = async () => {
 
   const res = await axios.get(`https://api.opendota.com/api/matches/6430823518?api_key=${opendotakey}`);

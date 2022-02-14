@@ -87,7 +87,7 @@ const main = async () => {
     // last_match_timestamp = new_last_match_timestamp - 1;
     // new_last_match_id = 6430768258;
 
-    if (last_match_timestamp > new_last_match_timestamp) {
+    if (last_match_timestamp >= new_last_match_timestamp) {
       console.log(new Date() + " no new match found.");
     } else {
       console.log(new Date() + " new match found.")
@@ -116,7 +116,7 @@ const RecordNewLastMatch = async (new_last_match) => {
 }
 
 const RecordNewLastMatchTimestamp= async (new_last_match_timestamp) => {
-  fs.writeFileSync('./last_match.data', new_last_match_timestamp.toString());
+  fs.writeFileSync('./last_match_timestamp.data', new_last_match_timestamp.toString());
 }
 
 const UpdateFunFactMessages = async () => {
