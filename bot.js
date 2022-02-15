@@ -144,15 +144,19 @@ const UpdateFunFactMessages = async () => {
     message_index++;
 
     let needsUpdate = false;
+    if (!message || !message.embeds || !message.embeds[0]) {
+      return;
+    }
+
     for (let field of message.embeds[0].fields) {
-      console.log(field);
+      // console.log(field);
       if (field.name == FUNFACTFIELDNAME && field.value == DOTDOTDOTLOADING) {
         needsUpdate = true;
         break;
       }
     }
 
-    console.log(needsUpdate);
+    // console.log(needsUpdate);
 
     if (message && needsUpdate) {
       console.log ('found ...loading to replace');
