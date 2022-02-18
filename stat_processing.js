@@ -27,11 +27,11 @@ const FunFact = async (opendota_data) => {
   }
 
   // Pick a known player to find stats for.
-  let random_index = await PickAnIndex(viable_players.length - 1);
+  let random_index = await PickAnIndex(viable_players.length);
   let luckyPlayer = viable_players[random_index];
 
 
-  random_index = await PickAnIndex(factFunctions.length - 1);
+  random_index = await PickAnIndex(factFunctions.length);
   let funFactMessage = await factFunctions[random_index](opendota_data, luckyPlayer.opendota_id, luckyPlayer.name);
   console.log("returning fun message: " + funFactMessage);
   return funFactMessage;
@@ -43,7 +43,7 @@ const DamageTakenFF = async (opendota_data, opendotaId, shortName) => {
   for (let player of opendota_data.data.players) {
     if (player.account_id == opendotaId) {
 
-      for (source in player.damage_taken) {
+      for (source in player.damage_taken) { 
         if (source.indexOf(`npc_dota_hero`) == 0) {
           // console.log(source);
           // console.log(player.damage_taken[source]);

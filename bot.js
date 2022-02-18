@@ -4,6 +4,15 @@ const { Client, Collection, Intents } = require('discord.js');
 const { token } = require('./config.json');
 
 const { GetLastMatchId, GetMatchDetails, GetFunFact, LookupHeroName } = require('./queries.js');
+const { 
+  GetAllPlayersSteamId,
+  GetPlayerLastMatchInfoBySteamId,
+  GetRegisteredChannels,
+  GetUsersRegisteredToChannel,
+  CheckMatchSeen,
+  UpdatePlayerLastMatchBySteamId,
+  SetRegisteredChannels,
+} = require('./player_manager.js');
 
 let FUNFACTFIELDNAME = `Fun Fact`;
 let DOTDOTDOTLOADING = `loading...`;
@@ -23,7 +32,10 @@ for (const file of commandFiles) {
   client.commands.set(command.data.name, command);
 }
 
-const prepare_broadcast = async (match_details) => {
+// Given a text channel, produce the broadcast message taking into account
+// which other users the message will be relevant to. i.e. they also register
+// with that text channel.
+const prepare_broadcast = async (match_details, textChannel) => {
   // inside a command, event listener, etc.
   let didWin = false; // for now just assume everyone played on the same team.
   let duration = Math.round(match_details.duration);
@@ -48,6 +60,8 @@ const prepare_broadcast = async (match_details) => {
   };
 
   embedFields.push(funField);
+
+  // TODO:Stahon add the match ID to a field.
 
   let winOrLoseText = (didWin ? `Win` : `Loss`);
   const embed_message = {
@@ -74,35 +88,71 @@ const debugFunction = async () => {
 }
 
 const main = async () => {
-  let last_match = fs.readFileSync('./last_match.data', 'utf-8');
-  try {
-    let lastMatchData = await GetLastMatchId();
-    let new_last_match_id = lastMatchData.match_id;
-    let new_last_match_timestamp = lastMatchData.timestamp;
-    // last_match_timestamp must be newer than the timestamp on disk
-    // if it isn't, discard.
-    let last_match_timestamp = fs.readFileSync('./last_match_timestamp.data',  'utf-8');
+  // Get all the registered players we have.
+  let allPlayers = await GetAllPlayersSteamId();
 
-    // DEBUG ONLY
-    // last_match_timestamp = new_last_match_timestamp - 1;
-    // new_last_match_id = 6430768258;
+  for (player of allPlayers) {
+    try {
+      // both return {match_id, timestamp}
+      let latestMatchData = await GetLastMatchId(player);
+      let lastMatchData = await GetPlayerLastMatchInfoBySteamId(player);
 
-    if (last_match_timestamp >= new_last_match_timestamp) {
-      console.log(new Date() + " no new match found.");
-    } else {
-      console.log(new Date() + " new match found.")
-      if (last_match != new_last_match_id) {
-        let match_details = await GetMatchDetails(new_last_match_id);
-        let broadcast_message = await prepare_broadcast(match_details);
-        await Broadcast(broadcast_message);
-        await RecordNewLastMatch(new_last_match_id);
-        await RecordNewLastMatchTimestamp(new_last_match_timestamp);
+      let matchSeenBefore = await CheckMatchSeen(latestMatchData);
+      if (matchSeenBefore) {
+        // some other player already caused this match to get announced,
       }
+
+      if (latestMatchData.match_id != lastMatchData.match_id) {
+        // Sometimes the valve API returns an older match so we have to check
+        // timestamp too.
+        if (latestMatchData.last_match_timestamp <= lastMatchData.timestamp) {
+          // nothing to do here, it's the same match, or an older match.
+          if (DEBUG_MODE) {
+            console.log(`Player ${player} returned an older match, nothing to do.`);
+          }
+
+          continue;
+        } else {
+          // New match found!
+          if (DEBUG_MODE) {
+            console.log(`Player ${player} returned a new match!`);
+          }
+
+          // We are operating on player at the moment.
+          // Get the channels this player is registered to.
+          let registered_channels = await GetRegisteredChannels(player);
+          
+          for (textChannel of registered_channels) {
+
+            // returns { result_array, duration }
+            // results array = [ { win, hero_id, kills, deaths, assists, discord_id, steam_id } ]
+            let relevant_players = await GetUsersRegisteredToChannel(textChannel.message_channel);
+            let match_details = await GetMatchDetails(latestMatchData.match_id, relevant_players);
+
+            let broadcast_message = await prepare_broadcast(match_details);
+
+            await Broadcast(player.steam_id, broadcast_message);
+
+            await RecordNewLastMatch(player.steam_id, new_last_match_id, new_last_match_timestamp);
+
+          }
+        
+        }
+
+      }
+
+    } catch (e) {
+      console.log("something went wrong.");
+      console.log(e);
     }
-  } catch (e) {
-    console.log("something went wrong.");
-    console.log(e);
   }
+
+
+      if (last_match != new_last_match_id) {
+
+      }
+    
+
 
   await UpdateFunFactMessages();
 
@@ -111,12 +161,8 @@ const main = async () => {
   await setTimeout(() => { main(); }, 10000);
 }
 
-const RecordNewLastMatch = async (new_last_match) => {
-  fs.writeFileSync('./last_match.data', new_last_match.toString());
-}
-
-const RecordNewLastMatchTimestamp= async (new_last_match_timestamp) => {
-  fs.writeFileSync('./last_match_timestamp.data', new_last_match_timestamp.toString());
+const RecordNewLastMatch = async (steamId, newLastMatch, newLastMatchTimestamp) => {
+  await UpdatePlayerLastMatchBySteamId(steamId, newLastMatch, newLastMatchTimestamp);
 }
 
 const UpdateFunFactMessages = async () => {
@@ -185,14 +231,21 @@ const UpdateFunFactMessages = async () => {
 
 }
 
-const Broadcast = async (broadcast_embed) => {
-  let notify_channels_raw = fs.readFileSync('./notify_channels.data', 'utf-8');
-  let notify_channels = notify_channels_raw.split('\n');
+const Broadcast = async (steamId, broadcast_embed, relevantPlayers) => {
+  // returns [{ channel, message snowflake}, ... ]
+  let notify_channels = await GetRegisteredChannels(steamId);
+  // join any relevant players channels too.
 
-  let persistance_data = "";
+  for (player of relevantPlayers) {
+    notify_channels.concat(await GetRegisteredChannels(player));
+  }
+
+  let newRegisteredChannels = [];
 
   for (let channel of notify_channels) {
-    let text_channel = client.channels.cache.get(channel);
+    let channel_id = channel.channel;
+
+    let text_channel = client.channels.cache.get(channel_id);
 
     if (DEBUG_MODE) {
       console.log("DEBUGMODE: Send [");
@@ -202,15 +255,13 @@ const Broadcast = async (broadcast_embed) => {
     }
 
     let message = await text_channel.send({ embeds: [broadcast_embed] });
-    persistance_data += (`${message.id}\n`);
+    let messageId = message.id;
+    let channel_persistance_data = { channel_id, messageId};
+    newRegisteredChannels.push(channel_persistance_data);
   }
 
-  if (DEBUG_MODE) {
-    return;
-  }
-
-  // record the message IDs in the order of notify_channel
-  fs.writeFileSync('./last_message.data', persistance_data);
+  // Update persistance data.
+  await SetRegisteredChannels(newRegisteredChannels);
 }
 
 client.on('interactionCreate', async interaction => {
